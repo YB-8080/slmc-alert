@@ -1,0 +1,51 @@
+name: SLMC availability monitor
+on:
+  schedule:
+    - cron: "3,13,23,33,43,53 * * * *"
+  workflow_dispatch:
+    inputs:
+      test_alert:
+        description: Send a test WhatsApp/email alert
+        type: boolean
+        default: false
+permissions:
+  contents: write
+concurrency:
+  group: slmc-monitor
+  cancel-in-progress: false
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+      - name: Run monitor
+        env:
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          WHATSAPP_PHONE: ${{ secrets.WHATSAPP_PHONE }}
+          CALLMEBOT_APIKEY: ${{ secrets.CALLMEBOT_APIKEY }}
+          TEST_ALERT: ${{ inputs.test_alert }}
+        run: |
+          if [ "$TEST_ALERT" = "true" ]; then
+            python3 monitor.py --test-alert
+          else
+            python3 monitor.py
+          fi
+      - name: Persist alert state
+        if: always()
+        run: |
+          if [ -f state.json ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add state.json
+            if ! git diff --cached --quiet; then
+              git commit -m "Update SLMC monitor state"
+              git push
+            fi
+          fi
